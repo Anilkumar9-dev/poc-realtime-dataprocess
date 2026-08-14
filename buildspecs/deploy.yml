@@ -10,6 +10,21 @@ phases:
   build:
     commands:
       - set -e
+
+      - echo "=== Verifying AWS credentials ==="
+      - aws sts get-caller-identity
+
+      - echo "=== Environment variables ==="
+      - echo "LAMBDA_ARTIFACT_BUCKET=${LAMBDA_ARTIFACT_BUCKET}"
+      - echo "APP_STACK_NAME=${APP_STACK_NAME}"
+      - echo "APP_TEMPLATE_FILE=${APP_TEMPLATE_FILE}"
+      - echo "RAW_FOLDER=${RAW_FOLDER}"
+      - echo "RAW_BUCKET_NAME=${RAW_BUCKET_NAME}"
+
+      - echo "=== Working directory ==="
+      - pwd
+      - ls -la
+
       - export PACKAGE_VERSION=${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}
       - mkdir -p dist
 
@@ -30,11 +45,26 @@ phases:
       - aws s3 cp dist/producer.zip s3://${LAMBDA_ARTIFACT_BUCKET}/${PRODUCER_KEY}
       - aws s3 cp dist/consumer.zip s3://${LAMBDA_ARTIFACT_BUCKET}/${CONSUMER_KEY}
 
-      - export PARAMS="ProducerCodeS3Bucket=${LAMBDA_ARTIFACT_BUCKET} ProducerCodeS3Key=${PRODUCER_KEY} ConsumerCodeS3Bucket=${LAMBDA_ARTIFACT_BUCKET} ConsumerCodeS3Key=${CONSUMER_KEY} RawFolder=${RAW_FOLDER}"
-      - if [ -n "${RAW_BUCKET_NAME}" ]; then export PARAMS="${PARAMS} RawBucketName=${RAW_BUCKET_NAME}"; fi
+      - echo "=== Verifying template file exists ==="
+      - ls -la ${APP_TEMPLATE_FILE}
 
-      - echo "Deploying application stack ${APP_STACK_NAME}"
-      - aws cloudformation deploy --stack-name ${APP_STACK_NAME} --template-file ${APP_TEMPLATE_FILE} --capabilities CAPABILITY_NAMED_IAM --parameter-overrides ${PARAMS}
+      - echo "=== Building parameter overrides ==="
+      - PARAM_OVERRIDES="ProducerCodeS3Bucket=${LAMBDA_ARTIFACT_BUCKET}"
+      - PARAM_OVERRIDES="${PARAM_OVERRIDES} ProducerCodeS3Key=${PRODUCER_KEY}"
+      - PARAM_OVERRIDES="${PARAM_OVERRIDES} ConsumerCodeS3Bucket=${LAMBDA_ARTIFACT_BUCKET}"
+      - PARAM_OVERRIDES="${PARAM_OVERRIDES} ConsumerCodeS3Key=${CONSUMER_KEY}"
+      - PARAM_OVERRIDES="${PARAM_OVERRIDES} RawFolder=${RAW_FOLDER}"
+      - if [ -n "${RAW_BUCKET_NAME}" ]; then PARAM_OVERRIDES="${PARAM_OVERRIDES} RawBucketName=${RAW_BUCKET_NAME}"; fi
+      - echo "PARAM_OVERRIDES=${PARAM_OVERRIDES}"
+
+      - echo "=== Deploying application stack ${APP_STACK_NAME} ==="
+      - |
+        aws cloudformation deploy \
+          --stack-name ${APP_STACK_NAME} \
+          --template-file ${APP_TEMPLATE_FILE} \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --no-fail-on-empty-changeset \
+          --parameter-overrides ${PARAM_OVERRIDES}
 
 artifacts:
   files:
