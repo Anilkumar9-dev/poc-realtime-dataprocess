@@ -1,0 +1,42 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - echo "Preparing build environment"
+      - aws --version
+      - python --version
+
+  build:
+    commands:
+      - set -e
+      - export PACKAGE_VERSION=${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}
+      - mkdir -p dist
+
+      - echo "Packaging producer Lambda"
+      - cd producer
+      - zip -j ../dist/producer.zip index.py
+      - cd ..
+
+      - echo "Packaging consumer Lambda"
+      - cd consumer
+      - zip -j ../dist/consumer.zip consumer_lambda.py
+      - cd ..
+
+      - export PRODUCER_KEY=producer/${PACKAGE_VERSION}/producer.zip
+      - export CONSUMER_KEY=consumer/${PACKAGE_VERSION}/consumer.zip
+
+      - echo "Uploading Lambda artifacts to S3"
+      - aws s3 cp dist/producer.zip s3://${LAMBDA_ARTIFACT_BUCKET}/${PRODUCER_KEY}
+      - aws s3 cp dist/consumer.zip s3://${LAMBDA_ARTIFACT_BUCKET}/${CONSUMER_KEY}
+
+      - export PARAMS="ProducerCodeS3Bucket=${LAMBDA_ARTIFACT_BUCKET} ProducerCodeS3Key=${PRODUCER_KEY} ConsumerCodeS3Bucket=${LAMBDA_ARTIFACT_BUCKET} ConsumerCodeS3Key=${CONSUMER_KEY} RawFolder=${RAW_FOLDER}"
+      - if [ -n "${RAW_BUCKET_NAME}" ]; then export PARAMS="${PARAMS} RawBucketName=${RAW_BUCKET_NAME}"; fi
+
+      - echo "Deploying application stack ${APP_STACK_NAME}"
+      - aws cloudformation deploy --stack-name ${APP_STACK_NAME} --template-file ${APP_TEMPLATE_FILE} --capabilities CAPABILITY_NAMED_IAM --parameter-overrides ${PARAMS}
+
+artifacts:
+  files:
+    - infra/cloudformation/app-stack.yaml
+    - dist/*

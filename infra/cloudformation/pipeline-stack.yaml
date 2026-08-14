@@ -1,0 +1,278 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CI/CD pipeline stack for realtime loads deployment
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: realtime-loads
+    Description: Prefix used for naming pipeline resources.
+
+  PipelineName:
+    Type: String
+    Default: realtime-loads-pipeline
+    Description: CodePipeline name.
+
+  RepositoryId:
+    Type: String
+    Description: GitHub repository in owner/repo format.
+
+  BranchName:
+    Type: String
+    Default: main
+    Description: Branch that triggers the pipeline.
+
+  ConnectionArn:
+    Type: String
+    Description: Existing CodeStar Connection ARN for GitHub.
+
+  AppStackName:
+    Type: String
+    Default: realtime-loads-app
+    Description: CloudFormation stack name for application resources.
+
+  LambdaArtifactBucketName:
+    Type: String
+    Description: Globally unique S3 bucket name to store Lambda zip artifacts.
+
+  ArtifactBucketName:
+    Type: String
+    Default: ""
+    Description: Optional artifact bucket name for CodePipeline. Leave blank to auto-generate.
+
+  AppTemplateFile:
+    Type: String
+    Default: infra/cloudformation/app-stack.yaml
+    Description: Path to application CloudFormation template inside the repository.
+
+  RawBucketName:
+    Type: String
+    Default: ""
+    Description: Optional explicit application raw bucket name. Leave blank to auto-generate.
+
+  RawFolder:
+    Type: String
+    Default: raw
+    Description: Prefix where consumer Lambda writes records.
+
+Conditions:
+  HasArtifactBucketName: !Not [!Equals [!Ref ArtifactBucketName, ""]]
+
+Resources:
+  PipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If [HasArtifactBucketName, !Ref ArtifactBucketName, !Ref AWS::NoValue]
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  LambdaArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref LambdaArtifactBucketName
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-codebuild-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: codebuild-deploy-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Sid: S3Artifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt PipelineArtifactBucket.Arn
+                  - !Sub ${PipelineArtifactBucket.Arn}/*
+                  - !GetAtt LambdaArtifactBucket.Arn
+                  - !Sub ${LambdaArtifactBucket.Arn}/*
+              - Sid: CloudFormationDeploy
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                Resource: "*"
+              - Sid: ProvisioningPermissions
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                  - lambda:*
+                  - kinesis:*
+                  - s3:*
+                  - logs:*
+                Resource: "*"
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-codepipeline-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: codepipeline-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt PipelineArtifactBucket.Arn
+                  - !Sub ${PipelineArtifactBucket.Arn}/*
+              - Sid: StartCodeBuild
+                Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: !GetAtt DeployCodeBuildProject.Arn
+              - Sid: UseConnection
+                Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                Resource: !Ref ConnectionArn
+
+  DeployCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${ProjectName}-deploy
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspecs/deploy.yml
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: false
+        EnvironmentVariables:
+          - Name: LAMBDA_ARTIFACT_BUCKET
+            Type: PLAINTEXT
+            Value: !Ref LambdaArtifactBucket
+          - Name: APP_STACK_NAME
+            Type: PLAINTEXT
+            Value: !Ref AppStackName
+          - Name: RAW_BUCKET_NAME
+            Type: PLAINTEXT
+            Value: !Ref RawBucketName
+          - Name: RAW_FOLDER
+            Type: PLAINTEXT
+            Value: !Ref RawFolder
+          - Name: APP_TEMPLATE_FILE
+            Type: PLAINTEXT
+            Value: !Ref AppTemplateFile
+
+  DeploymentPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Ref PipelineName
+      RoleArn: !GetAtt PipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceFromGitHub
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref ConnectionArn
+                FullRepositoryId: !Ref RepositoryId
+                BranchName: !Ref BranchName
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceOutput
+              RunOrder: 1
+        - Name: BuildAndDeploy
+          Actions:
+            - Name: BuildDeployApp
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref DeployCodeBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+
+Outputs:
+  PipelineNameOut:
+    Description: Name of the created CodePipeline.
+    Value: !Ref DeploymentPipeline
+
+  PipelineArtifactBucketOut:
+    Description: S3 bucket used by CodePipeline artifact store.
+    Value: !Ref PipelineArtifactBucket
+
+  LambdaArtifactBucketOut:
+    Description: S3 bucket used for Lambda deployment zips.
+    Value: !Ref LambdaArtifactBucket

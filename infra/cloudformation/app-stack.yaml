@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Realtime Loads application stack (Producer Lambda -> Kinesis -> Consumer Lambda -> S3)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: realtime-loads
+    Description: Prefix used for naming resources.
+
+  ProducerCodeS3Bucket:
+    Type: String
+    Description: S3 bucket that stores the producer Lambda deployment package.
+
+  ProducerCodeS3Key:
+    Type: String
+    Description: S3 key for the producer Lambda deployment package zip.
+
+  ConsumerCodeS3Bucket:
+    Type: String
+    Description: S3 bucket that stores the consumer Lambda deployment package.
+
+  ConsumerCodeS3Key:
+    Type: String
+    Description: S3 key for the consumer Lambda deployment package zip.
+
+  KinesisStreamName:
+    Type: String
+    Default: realtime-order-events
+    Description: Kinesis stream name used between producer and consumer.
+
+  RawBucketName:
+    Type: String
+    Default: ""
+    Description: Optional explicit S3 bucket name. Leave blank to auto-generate.
+
+  RawFolder:
+    Type: String
+    Default: raw
+    Description: S3 prefix where consumer Lambda stores raw JSON records.
+
+  ConsumerBatchSize:
+    Type: Number
+    Default: 100
+    MinValue: 1
+    MaxValue: 10000
+    Description: Batch size for the Kinesis event source mapping.
+
+  ConsumerStartingPosition:
+    Type: String
+    Default: LATEST
+    AllowedValues:
+      - LATEST
+      - TRIM_HORIZON
+    Description: Starting position for Kinesis consumption.
+
+Conditions:
+  HasRawBucketName: !Not [!Equals [!Ref RawBucketName, ""]]
+
+Resources:
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If [HasRawBucketName, !Ref RawBucketName, !Ref AWS::NoValue]
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Ref KinesisStreamName
+      StreamModeDetails:
+        StreamMode: ON_DEMAND
+
+  ProducerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-producer-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: producer-lambda-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LambdaLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Sid: KinesisWrite
+                Effect: Allow
+                Action:
+                  - kinesis:PutRecord
+                Resource: !GetAtt KinesisStream.Arn
+
+  ConsumerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-consumer-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: consumer-lambda-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LambdaLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Sid: S3Write
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub ${RawDataBucket.Arn}/${RawFolder}/*
+              - Sid: S3List
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt RawDataBucket.Arn
+
+  ProducerLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-producer
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt ProducerLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          KINESIS_STREAM_NAME: !Ref KinesisStreamName
+          APP_AWS_REGION: !Ref AWS::Region
+      Code:
+        S3Bucket: !Ref ProducerCodeS3Bucket
+        S3Key: !Ref ProducerCodeS3Key
+
+  ConsumerLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-consumer
+      Runtime: python3.12
+      Handler: consumer_lambda.lambda_handler
+      Role: !GetAtt ConsumerLambdaRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref RawDataBucket
+          RAW_FOLDER: !Ref RawFolder
+          APP_AWS_REGION: !Ref AWS::Region
+      Code:
+        S3Bucket: !Ref ConsumerCodeS3Bucket
+        S3Key: !Ref ConsumerCodeS3Key
+
+  ConsumerKinesisEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: !Ref ConsumerBatchSize
+      StartingPosition: !Ref ConsumerStartingPosition
+      EventSourceArn: !GetAtt KinesisStream.Arn
+      FunctionName: !Ref ConsumerLambdaFunction
+      Enabled: true
+
+Outputs:
+  KinesisStreamArn:
+    Description: Kinesis stream ARN.
+    Value: !GetAtt KinesisStream.Arn
+
+  ProducerLambdaArn:
+    Description: Producer Lambda ARN.
+    Value: !GetAtt ProducerLambdaFunction.Arn
+
+  ConsumerLambdaArn:
+    Description: Consumer Lambda ARN.
+    Value: !GetAtt ConsumerLambdaFunction.Arn
+
+  RawBucketNameOut:
+    Description: Bucket name for raw records.
+    Value: !Ref RawDataBucket

@@ -1,0 +1,97 @@
+{
+  "hook": "order.added",
+  "eventDateTimeUTC": "2025-10-03T00:57:51",
+  "correlationId": "a6dc0d98f23e48b1a4385e9e369a0b15",
+  "CustomerId": "2034234354",
+  "partnerId": "5",
+  "data": {
+    "orderId": "203329255131",
+    "operationType": "EVENTS_PURCHASE_CALLBACK_OPERATION",
+    "orderSummary": "OGW Test 1 Telstra Plus Adult, 1 Telstra Adult, 1 Telstra Large Combo Upgrade, 1 Booking Fee to Fast And Furious 10",
+    "redemptionId": "130673081",
+    "totalPayment": 33.15,
+    "totalGSTIncluded": 3.01,
+    "orderStatus": "Completed",
+    "orderLineItems": [
+      {
+        "orderLineItemID": "101192701",
+        "productId": "39126",
+        "productName": "Telstra Plus Adult",
+        "productType": "Ticket",
+        "paymentMethod": "Telstra Plus Points",
+        "telstraPlusAction": "Redeem",
+        "orderQuantity": 1,
+        "productDetails": {
+          "movieDetails": {
+            "id": "16275",
+            "title": "Fast And Furious 10",
+            "genre": "action,thriller",
+            "runtime": 141,
+            "rating": "M"
+          },
+          "session": {
+            "sessionType": "Original",
+            "sessionId": "16289870",
+            "sessionStart": "2025-10-03 19:30",
+            "sessionStartUtc": "2025-10-03 09:30"
+          },
+          "cinema": {
+            "id": "76",
+            "name": "Test",
+            "state": "NSW",
+            "suburb": "Sydney"
+          }
+        },
+        "partnerOfferId": "EVENT_REDEEM",
+        "telstraPoints": {
+          "redeemed": 8000
+        }
+      },
+      {
+        "orderLineItemID": "101192702",
+        "productId": "39125",
+        "productName": "Telstra Adult",
+        "productType": "Ticket",
+        "paymentMethod": "Saved Cards,Telstra Plus",
+        "telstraPlusAction": "Earn",
+        "paymentMade": 14.5,
+        "orderQuantity": 1,
+        "basePrice": 14.5,
+        "individualRRP": 14.5,
+        "individualGSTIncluded": 1.32,
+        "totalRRP": 14.5,
+        "totalGSTIncluded": 1.32,
+        "productDetails": {
+          "movieDetails": {
+            "id": "16275",
+            "title": "Fast And Furious 10",
+            "genre": "action,thriller",
+            "runtime": 141,
+            "rating": "M"
+          },
+          "session": {
+            "sessionType": "Original",
+            "sessionId": "16289870",
+            "sessionStart": "2025-10-03 19:30",
+            "sessionStartUtc": "2025-10-03 09:30"
+          },
+          "cinema": {
+            "id": "76",
+            "name": "Test",
+            "state": "NSW",
+            "suburb": "Sydney"
+          }
+        },
+        "partnerOfferId": "EVENT_EARN",
+        "telstraPoints": {
+          "earned": 145
+        }
+      }
+    ],
+    "totalTelstraPoints": {
+      "redeemed": 8000,
+      "earned": 145,
+      "totalPaymentEarningPoints": 14.5
+    }
+  }
+}
