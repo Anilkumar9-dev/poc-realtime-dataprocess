@@ -141,6 +141,16 @@ Resources:
                 Action:
                   - s3:ListBucket
                 Resource: !GetAtt RawDataBucket.Arn
+              - Sid: KinesisRead
+                Effect: Allow
+                Action:
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                  - kinesis:DescribeStreamSummary
+                  - kinesis:ListShards
+                  - kinesis:ListStreams
+                Resource: !GetAtt KinesisStream.Arn
 
   ProducerLambdaFunction:
     Type: AWS::Lambda::Function
