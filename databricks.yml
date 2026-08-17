@@ -1,0 +1,76 @@
+bundle:
+  name: poc-realtime-dataprocess
+
+include:
+  - resources/*.yml
+
+variables:
+  source_path:
+    description: Bronze source path
+    default: s3://kinesis-learning-lab/raw/
+  schema_location:
+    description: Bronze schema location
+    default: /Volumes/kinesis_learning_lab/bronze/checkpoints/orders_schema
+  checkpoint_location:
+    description: Bronze checkpoint location
+    default: /Volumes/kinesis_learning_lab/bronze/checkpoints/orders_checkpoint
+  target_table:
+    description: Bronze target table
+    default: kinesis_learning_lab.bronze.orders_bronze
+  file_format:
+    description: Bronze source file format
+    default: json
+  bronze_table:
+    description: Silver input table
+    default: kinesis_learning_lab.bronze.orders_bronze
+  silver_table:
+    description: Silver/Gold shared silver table
+    default: kinesis_learning_lab.silver.orders_silver
+  gold_table:
+    description: Gold target table
+    default: kinesis_learning_lab.gold.customer_revenue_gold
+
+workspace:
+  host: ${env.DATABRICKS_HOST}
+  root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/dev
+    variables:
+      source_path: s3://kinesis-learning-lab-dev/raw/
+      schema_location: /Volumes/kinesis_learning_lab_dev/bronze/checkpoints/orders_schema
+      checkpoint_location: /Volumes/kinesis_learning_lab_dev/bronze/checkpoints/orders_checkpoint
+      target_table: kinesis_learning_lab_dev.bronze.orders_bronze
+      bronze_table: kinesis_learning_lab_dev.bronze.orders_bronze
+      silver_table: kinesis_learning_lab_dev.silver.orders_silver
+      gold_table: kinesis_learning_lab_dev.gold.customer_revenue_gold
+
+  uat:
+    mode: production
+    workspace:
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/uat
+    variables:
+      source_path: s3://kinesis-learning-lab-uat/raw/
+      schema_location: /Volumes/kinesis_learning_lab_uat/bronze/checkpoints/orders_schema
+      checkpoint_location: /Volumes/kinesis_learning_lab_uat/bronze/checkpoints/orders_checkpoint
+      target_table: kinesis_learning_lab_uat.bronze.orders_bronze
+      bronze_table: kinesis_learning_lab_uat.bronze.orders_bronze
+      silver_table: kinesis_learning_lab_uat.silver.orders_silver
+      gold_table: kinesis_learning_lab_uat.gold.customer_revenue_gold
+
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/prod
+    variables:
+      source_path: s3://kinesis-learning-lab/raw/
+      schema_location: /Volumes/kinesis_learning_lab/bronze/checkpoints/orders_schema
+      checkpoint_location: /Volumes/kinesis_learning_lab/bronze/checkpoints/orders_checkpoint
+      target_table: kinesis_learning_lab.bronze.orders_bronze
+      bronze_table: kinesis_learning_lab.bronze.orders_bronze
+      silver_table: kinesis_learning_lab.silver.orders_silver
+      gold_table: kinesis_learning_lab.gold.customer_revenue_gold
