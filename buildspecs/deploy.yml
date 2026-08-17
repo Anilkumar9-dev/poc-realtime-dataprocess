@@ -57,6 +57,11 @@ phases:
       - if [ -n "${RAW_BUCKET_NAME}" ]; then PARAM_OVERRIDES="${PARAM_OVERRIDES} RawBucketName=${RAW_BUCKET_NAME}"; fi
       - echo "PARAM_OVERRIDES=${PARAM_OVERRIDES}"
 
+      - echo "=== Checking current app stack status ==="
+      - STACK_STATUS=$(aws cloudformation describe-stacks --stack-name ${APP_STACK_NAME} --query "Stacks[0].StackStatus" --output text 2>/dev/null || true)
+      - echo "Current stack status: ${STACK_STATUS}"
+      - if [ "${STACK_STATUS}" = "ROLLBACK_COMPLETE" ]; then echo "Stack is ROLLBACK_COMPLETE. Deleting so deploy can recreate it."; aws cloudformation delete-stack --stack-name ${APP_STACK_NAME}; aws cloudformation wait stack-delete-complete --stack-name ${APP_STACK_NAME}; fi
+
       - echo "=== Deploying application stack ${APP_STACK_NAME} ==="
       - |
         aws cloudformation deploy \
